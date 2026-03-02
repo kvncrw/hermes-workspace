@@ -56,6 +56,7 @@ export type StreamingState = {
     name: string
     phase: string
     args?: unknown
+    result?: string
   }>
 }
 
@@ -376,6 +377,7 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
             ...nextToolCalls[existingToolIndex],
             phase: event.phase,
             args: event.args,
+            result: (event as any).result ?? nextToolCalls[existingToolIndex].result,
           }
         } else if (event.phase === 'calling' || event.phase === 'start') {
           nextToolCalls.push({
@@ -383,6 +385,7 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
             name: event.name,
             phase: event.phase,
             args: event.args,
+            result: (event as any).result,
           })
         }
 

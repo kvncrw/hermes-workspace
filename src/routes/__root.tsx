@@ -16,6 +16,7 @@ import { KeyboardShortcutsModal } from '@/components/keyboard-shortcuts-modal'
 import { GatewaySetupWizard } from '@/components/gateway-setup-wizard'
 import { GatewayReconnectBanner } from '@/components/gateway-reconnect-banner'
 import { CompactionNotifier } from '@/components/compaction-notifier'
+import { FallbackBanner } from '@/components/fallback-banner'
 import { GatewayRestartProvider } from '@/components/gateway-restart-overlay'
 import { ExecApprovalToast } from '@/components/exec-approval-toast'
 import { initializeSettingsAppearance } from '@/hooks/use-settings'
@@ -271,6 +272,7 @@ function RootLayout() {
       <GatewayRestartProvider>
       <GatewayReconnectBanner />
       <CompactionNotifier />
+      <FallbackBanner />
       <GlobalShortcutListener />
       <TerminalShortcutListener />
       <TaskReminderRunner />

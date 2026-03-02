@@ -192,10 +192,11 @@ export function useGatewayChatStream(
           name: string
           toolCallId?: string
           args?: unknown
+          result?: string
           runId?: string
           sessionKey: string
         }
-        processEvent({ type: 'tool', ...data })
+        processEvent({ type: 'tool', ...data, result: data.result } as any)
         touchStreamTimeout(data.sessionKey)
       } catch {
         // Ignore parse errors

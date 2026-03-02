@@ -338,7 +338,7 @@ function ToolCallPill({ toolCall }: { toolCall: StreamToolCall }) {
   // Truncate long paths/commands to keep pill readable
   const truncated = label && label.length > 60 ? `${label.slice(0, 57)}…` : label
 
-  return (
+  const pill = (
     <span
       className={cn(
         'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium font-mono max-w-full',
@@ -358,6 +358,21 @@ function ToolCallPill({ toolCall }: { toolCall: StreamToolCall }) {
       {isError && <span className="shrink-0 opacity-70">✗</span>}
     </span>
   )
+
+  if (isDone && toolCall.result) {
+    return (
+      <details className="inline-block max-w-full">
+        <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
+          {pill}
+        </summary>
+        <pre className="mt-1 max-h-40 overflow-y-auto rounded-md bg-neutral-900 px-2 py-1.5 text-xs font-mono text-neutral-200 whitespace-pre-wrap break-words">
+          {toolCall.result}
+        </pre>
+      </details>
+    )
+  }
+
+  return pill
 }
 
 function attachmentSource(attachment: GatewayAttachment | undefined): string {
