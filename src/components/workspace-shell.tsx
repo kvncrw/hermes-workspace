@@ -84,8 +84,10 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
 
   const { settings } = useSettings()
   const sidebarCollapsed = useWorkspaceStore((s) => s.sidebarCollapsed)
+  const sidebarPinned = useWorkspaceStore((s) => s.sidebarPinned)
   const chatFocusMode = useWorkspaceStore((s) => s.chatFocusMode)
   const toggleSidebar = useWorkspaceStore((s) => s.toggleSidebar)
+  const toggleSidebarPinned = useWorkspaceStore((s) => s.toggleSidebarPinned)
   const setSidebarCollapsed = useWorkspaceStore((s) => s.setSidebarCollapsed)
   const { onTouchStart, onTouchMove, onTouchEnd } = useSwipeNavigation()
 
@@ -157,7 +159,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
   const isOnTerminalRoute = pathname.startsWith('/terminal')
   const hideChatSidebar = isOnChatRoute && chatFocusMode
   const showDesktopSidebarBackdrop =
-    !isMobile && !isOnChatRoute && !sidebarCollapsed
+    !isMobile && !isOnChatRoute && !sidebarCollapsed && !sidebarPinned
 
   // Sessions query — shared across sidebar and chat
   const sessionsQuery = useQuery({
@@ -318,7 +320,9 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
                 creatingSession={creatingSession}
                 onCreateSession={startNewChat}
                 isCollapsed={sidebarCollapsed}
+                isPinned={sidebarPinned}
                 onToggleCollapse={toggleSidebar}
+                onTogglePinned={toggleSidebarPinned}
                 onSelectSession={handleSelectSession}
                 onActiveSessionDelete={handleActiveSessionDelete}
                 sessionsLoading={sessionsLoading}
