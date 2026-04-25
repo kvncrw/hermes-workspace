@@ -13,19 +13,17 @@ import {
   MessageMultiple01Icon,
   Moon02Icon,
   PencilEdit02Icon,
+  PinIcon,
+  PinOffIcon,
   PuzzleIcon,
 
   Rocket01Icon,
   Search01Icon, Settings01Icon, Sun02Icon, UserGroupIcon, UserMultipleIcon
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
-import { t } from '@/lib/i18n'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
-import {
-  CHAT_OPEN_SETTINGS_EVENT
-  
-} from '../chat-events'
+import { CHAT_OPEN_SETTINGS_EVENT } from '../chat-events'
 import { useChatSettings as useSidebarSettings } from '../hooks/use-chat-settings'
 import { useDeleteSession } from '../hooks/use-delete-session'
 import { useRenameSession } from '../hooks/use-rename-session'
@@ -33,8 +31,9 @@ import { ProvidersDialog } from './providers-dialog'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import { SessionDeleteDialog } from './sidebar/session-delete-dialog'
 import { SidebarSessions } from './sidebar/sidebar-sessions'
-import type {ChatOpenSettingsDetail} from '../chat-events';
+import type { ChatOpenSettingsDetail } from '../chat-events'
 import type { SessionMeta } from '../types'
+import { t } from '@/lib/i18n'
 import { SettingsDialog } from '@/components/settings-dialog'
 import {
   TooltipContent,
@@ -115,7 +114,9 @@ type ChatSidebarProps = {
   creatingSession: boolean
   onCreateSession: () => void
   isCollapsed: boolean
+  isPinned: boolean
   onToggleCollapse: () => void
+  onTogglePinned: () => void
   onSelectSession?: () => void
   onActiveSessionDelete?: () => void
   sessionsLoading: boolean
@@ -124,15 +125,11 @@ type ChatSidebarProps = {
   onRetrySessions: () => void
 }
 
-
-
 // ── Reusable nav item ───────────────────────────────────────────────────
 
 type NavItemDef = {
   kind: 'link' | 'button'
   to?: string
-  search?: Record<string, unknown>
-  hash?: string
   icon: unknown
   label: string
   active: boolean
@@ -152,7 +149,7 @@ export async function fetchWorkspaceStats(): Promise<WorkspaceStats | null> {
   }
 }
 
-export async function fetchWorkspaceProjectShortcuts(): Promise<Array<never>> {
+export function fetchWorkspaceProjectShortcuts(): Array<never> {
   return []
 }
 
@@ -229,9 +226,7 @@ function NavItem({
             <TooltipTrigger
               render={
                 <Link
-                  to={item.to!}
-                  search={item.search}
-                  hash={item.hash}
+                  to={item.to}
                   onClick={handleSelect}
                   className={cls}
                   data-tour={item.dataTour}
@@ -247,9 +242,7 @@ function NavItem({
     }
     return (
       <Link
-        to={item.to!}
-        search={item.search}
-        hash={item.hash}
+        to={item.to}
         onClick={handleSelect}
         className={cls}
         data-tour={item.dataTour}
@@ -496,7 +489,9 @@ function ChatSidebarComponent({
   sessions,
   activeFriendlyId,
   isCollapsed,
+  isPinned,
   onToggleCollapse,
+  onTogglePinned,
   onSelectSession,
   onActiveSessionDelete,
   sessionsLoading,
@@ -526,8 +521,11 @@ function ChatSidebarComponent({
 
   useEffect(() => {
     function handleOpenSettingsEvent(event: Event) {
-      const detail = (event as CustomEvent<ChatOpenSettingsDetail>).detail
-      handleOpenSettings(detail?.section === 'appearance' ? 'appearance' : 'hermes')
+      const detail = (event as CustomEvent<ChatOpenSettingsDetail | undefined>)
+        .detail
+      handleOpenSettings(
+        detail?.section === 'appearance' ? 'appearance' : 'hermes',
+      )
     }
 
     window.addEventListener(CHAT_OPEN_SETTINGS_EVENT, handleOpenSettingsEvent)
@@ -581,8 +579,6 @@ function ChatSidebarComponent({
     duration: 0.15,
     ease: isCollapsed ? 'easeIn' : 'easeOut',
   } as const
-
-
 
   // Collapsible section states
   const [mainExpanded, toggleMain] = usePersistedBool(
@@ -886,7 +882,7 @@ function ChatSidebarComponent({
                 to="/chat"
                 className={cn(
                   buttonVariants({ variant: 'ghost', size: 'sm' }),
-                  'w-full pl-1.5 justify-start gap-2',
+                  'w-full pl-1.5 pr-20 justify-start gap-2',
                 )}
               >
                 <img src="/hermes-avatar.webp" alt="Hermes" className="size-6 rounded-lg" />
@@ -896,6 +892,36 @@ function ChatSidebarComponent({
           ) : null}
         </AnimatePresence>
         <TooltipProvider>
+          {!isVisuallyCollapsed ? (
+            <TooltipRoot>
+              <TooltipTrigger
+                onClick={onTogglePinned}
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={isPinned ? 'Unpin Sidebar' : 'Pin Sidebar'}
+                    aria-pressed={isPinned}
+                    className={cn(
+                      'absolute right-9 top-1/2 shrink-0 -translate-y-1/2 opacity-80 hover:opacity-100',
+                      isPinned &&
+                        'bg-[var(--theme-accent)]/10 text-[var(--theme-accent)] opacity-100',
+                    )}
+                    data-tour="sidebar-pin-toggle"
+                  >
+                    <HugeiconsIcon
+                      icon={isPinned ? PinOffIcon : PinIcon}
+                      size={18}
+                      strokeWidth={1.75}
+                    />
+                  </Button>
+                }
+              />
+              <TooltipContent side="right">
+                {isPinned ? 'Unpin Sidebar' : 'Pin Sidebar'}
+              </TooltipContent>
+            </TooltipRoot>
+          ) : null}
           <TooltipRoot>
             <TooltipTrigger
               onClick={handleSidebarToggle}
@@ -1202,6 +1228,7 @@ function areSidebarPropsEqual(
   if (prevProps.activeFriendlyId !== nextProps.activeFriendlyId) return false
   if (prevProps.creatingSession !== nextProps.creatingSession) return false
   if (prevProps.isCollapsed !== nextProps.isCollapsed) return false
+  if (prevProps.isPinned !== nextProps.isPinned) return false
   if (prevProps.sessionsLoading !== nextProps.sessionsLoading) return false
   if (prevProps.sessionsFetching !== nextProps.sessionsFetching) return false
   if (prevProps.sessionsError !== nextProps.sessionsError) return false
