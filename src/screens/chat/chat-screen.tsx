@@ -1,7 +1,9 @@
 // Module-level local model override — set by composer when user picks a local model
 // Avoids prop threading. Reset when switching back to cloud models.
 export let _localModelOverride = ''
-export function setLocalModelOverride(model: string) { _localModelOverride = model }
+export function setLocalModelOverride(model: string) {
+  _localModelOverride = model
+}
 
 import {
   useCallback,
@@ -596,7 +598,8 @@ export function ChatScreen({
   // If so, re-set waitingForResponse in the store so the UI shows the spinner.
   useActiveRunCheck({
     sessionKey: resolvedSessionKey ?? '',
-    enabled: !isNewChat && Boolean(resolvedSessionKey) && historyQuery.isSuccess,
+    enabled:
+      !isNewChat && Boolean(resolvedSessionKey) && historyQuery.isSuccess,
   })
 
   // Wire SSE realtime stream for instant message delivery
@@ -619,9 +622,9 @@ export function ChatScreen({
       : isNewChat
         ? 'new'
         : resolvedSessionKey ||
-        sessionKeyForHistory ||
-        activeCanonicalKey ||
-        'main',
+          sessionKeyForHistory ||
+          activeCanonicalKey ||
+          'main',
     friendlyId: portableChatFriendlyId,
     historyMessages,
     portableMode: isPortableMode,
@@ -896,13 +899,21 @@ export function ChatScreen({
     return () => window.clearTimeout(fallback)
   }, [waitingForResponse])
 
-  // Issue #43 polling fallback: when waiting but SSE hasn't reconnected,
-  // poll the active-run endpoint every 5s to detect completion.
+  // Recovery fallback: send-stream can transition into handoff for long tool
+  // runs, and this workspace build does not have a real chat-event SSE stream.
+  // Always poll while waiting so completed server-side runs reconcile into the
+  // UI instead of leaving a stale "preparing response" state.
   useEffect(() => {
     if (!waitingForResponse || !resolvedSessionKey) return
-    if (sseConnectionState === 'connected') return // SSE will deliver the event
     const interval = window.setInterval(async () => {
       try {
+        const waitingMeta =
+          useChatStore.getState().waitingSessionMeta[resolvedSessionKey]
+        if (waitingMeta?.since && Date.now() - waitingMeta.since < 15_000) {
+          return
+        }
+        if (activeRealtimeStreamingRef.current) return
+
         const res = await fetch(
           `/api/sessions/${encodeURIComponent(resolvedSessionKey)}/active-run`,
         )
@@ -915,15 +926,15 @@ export function ChatScreen({
         // Treat unknown / transient statuses as still-active to avoid premature teardown
         const terminalStatuses = ['completed', 'failed', 'cancelled', 'error']
         if (terminalStatuses.includes(status)) {
-          streamFinish()
           refreshHistoryRef.current()
+          streamFinish()
         }
       } catch {
         // ignore network errors
       }
     }, 5000)
     return () => window.clearInterval(interval)
-  }, [waitingForResponse, resolvedSessionKey, sseConnectionState, streamFinish])
+  }, [waitingForResponse, resolvedSessionKey, streamFinish])
 
   useAutoSessionTitle({
     friendlyId: activeFriendlyId,
@@ -1183,10 +1194,12 @@ export function ChatScreen({
     activeRealtimeStreamingText,
     activeIsRealtimeStreaming,
   )
-  const stickyStreamingTextRef = useRef<{ runId: string | null; text: string }>({
-    runId: null,
-    text: '',
-  })
+  const stickyStreamingTextRef = useRef<{ runId: string | null; text: string }>(
+    {
+      runId: null,
+      text: '',
+    },
+  )
   stickyStreamingTextRef.current = advanceStickyStreamingText({
     isStreaming: activeIsRealtimeStreaming,
     runId: streamingRunId ?? null,
@@ -1839,7 +1852,9 @@ export function ChatScreen({
         window.clearTimeout(failsafeTimerRef.current)
       }
       failsafeTimerRef.current = window.setTimeout(() => {
+        refreshHistoryRef.current()
         streamFinish()
+        window.setTimeout(() => refreshHistoryRef.current(), 2000)
       }, 120_000)
 
       // Send a compatibility shape for attachment parsing.

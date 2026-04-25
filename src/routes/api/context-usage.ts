@@ -10,6 +10,8 @@ import {
 } from '@/server/gateway-capabilities'
 
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'gpt-5.5': 1_050_000,
+  'gpt-5.5-pro': 1_050_000,
   'claude-opus-4-6': 200_000,
   'claude-opus-4-5': 200_000,
   'claude-sonnet-4-6': 200_000,
@@ -19,6 +21,7 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   'claude-3-opus': 200_000,
   'claude-haiku-3.5': 200_000,
   'gpt-5.4': 1_000_000,
+  'gpt-5.4-pro': 1_000_000,
   'gpt-5.2-codex': 1_000_000,
   'gpt-4.1': 1_000_000,
   'gpt-4.1-mini': 1_000_000,
