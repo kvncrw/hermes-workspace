@@ -341,18 +341,32 @@ function loadPersistedMission(): PersistedMission | null {
     if (!goal || (phase !== 'idle' && phase !== 'decomposing' && phase !== 'running' && phase !== 'complete') || streamText === null || planText === null || !workerKeys || !workerLabels) {
       return null
     }
+    // Conductor missions run server-side in Hermes (cron-backed orchestrator
+    // + sessions_yield workers); the browser is a polling viewer, not the
+    // owner of the mission process. So a remount (page switch, refresh,
+    // app suspend/resume) must NOT discard a running/decomposing mission —
+    // the orchestrator session is still alive on the server and we have its
+    // session key in workerKeys[0]. Drop running/decomposing only if it's
+    // older than 6 hours (well past any reasonable mission length) — at
+    // that point it's almost certainly stale state we can safely retire.
+    const SIX_HOURS_MS = 6 * 60 * 60_000
+    const startedMs = missionStartedAt ? new Date(missionStartedAt).getTime() : NaN
+    const ageMs = Number.isFinite(startedMs) ? Date.now() - startedMs : 0
+    const isStaleByAge =
+      (phase === 'running' || phase === 'decomposing') && ageMs > SIX_HOURS_MS
+
     return {
-      missionId,
-      missionJobId,
-      goal,
-      phase,
-      missionStartedAt,
-      isPaused,
-      pausedElapsedMs,
-      accumulatedPausedMs,
-      pauseStartedAt,
-      workerKeys,
-      workerLabels,
+      missionId: isStaleByAge ? null : missionId,
+      missionJobId: isStaleByAge ? null : missionJobId,
+      goal: isStaleByAge ? '' : goal,
+      phase: isStaleByAge ? 'idle' : phase,
+      missionStartedAt: isStaleByAge ? null : missionStartedAt,
+      isPaused: isStaleByAge ? false : isPaused,
+      pausedElapsedMs: isStaleByAge ? 0 : pausedElapsedMs,
+      accumulatedPausedMs: isStaleByAge ? 0 : accumulatedPausedMs,
+      pauseStartedAt: isStaleByAge ? null : pauseStartedAt,
+      workerKeys: isStaleByAge ? [] : workerKeys,
+      workerLabels: isStaleByAge ? [] : workerLabels,
       workerOutputs,
       streamText,
       planText,
