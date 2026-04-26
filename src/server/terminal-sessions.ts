@@ -4,6 +4,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -33,6 +34,53 @@ const __dirname_resolved =
     : dirname(fileURLToPath(import.meta.url))
 const PTY_HELPER = resolve(__dirname_resolved, 'pty-helper.py')
 
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function resolveTerminalCwd(requestedCwd: string | undefined, home: string) {
+  const expandHome = (value: string) =>
+    value.startsWith('~') ? value.replace('~', home) : value
+
+  const requested = requestedCwd ? expandHome(requestedCwd) : home
+  if (isDirectory(requested)) {
+    return {
+      cwd: requested,
+      warning: null,
+    }
+  }
+
+  const fallbacks = [home, process.cwd(), '/tmp']
+  const fallback = fallbacks.find((candidate) => isDirectory(candidate)) ?? '/'
+  return {
+    cwd: fallback,
+    warning:
+      requestedCwd && requestedCwd.trim().length > 0
+        ? `[terminal] cwd ${requestedCwd} was not available; started in ${fallback}\r\n`
+        : null,
+  }
+}
+
+function resolveTerminalShell(requestedShell: string | undefined): string {
+  if (requestedShell) {
+    if (!requestedShell.startsWith('/') || existsSync(requestedShell)) {
+      return requestedShell
+    }
+  }
+
+  if (process.platform === 'win32') return 'powershell.exe'
+
+  const fallbacks =
+    process.platform === 'darwin'
+      ? ['/bin/zsh', '/bin/bash', '/bin/sh']
+      : ['/bin/bash', '/bin/sh']
+  return fallbacks.find((candidate) => existsSync(candidate)) ?? 'sh'
+}
+
 export function createTerminalSession(params: {
   command?: Array<string>
   cwd?: string
@@ -43,18 +91,9 @@ export function createTerminalSession(params: {
   const emitter = new EventEmitter()
   const sessionId = randomUUID()
 
-  const home = process.env.HOME ?? homedir() ?? '/tmp'
-  const defaultShell =
-    process.platform === 'win32'
-      ? 'powershell.exe'
-      : process.platform === 'darwin'
-        ? '/bin/zsh'
-        : '/bin/bash'
-  const shell = params.command?.[0] ?? process.env.SHELL ?? defaultShell
-  let cwd = params.cwd ?? home
-  if (cwd.startsWith('~')) {
-    cwd = cwd.replace('~', home)
-  }
+  const home = process.env.HOME ?? homedir()
+  const shell = resolveTerminalShell(params.command?.[0] ?? process.env.SHELL)
+  const { cwd, warning: cwdWarning } = resolveTerminalCwd(params.cwd, home)
 
   const cols = params.cols ?? 80
   const rows = params.rows ?? 24
@@ -81,6 +120,13 @@ export function createTerminalSession(params: {
     } else {
       earlyBuffer.push(evt)
     }
+  }
+
+  if (cwdWarning) {
+    pushEvent({
+      event: 'data',
+      payload: { data: cwdWarning },
+    })
   }
 
   // Spawn Python PTY helper
@@ -111,6 +157,10 @@ export function createTerminalSession(params: {
   proc.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString()
     if (msg.trim()) {
+      pushEvent({
+        event: 'error',
+        payload: { message: msg.trim() },
+      })
       if (import.meta.env.DEV) console.error('[pty-helper stderr]', msg)
     }
   })
@@ -129,6 +179,8 @@ export function createTerminalSession(params: {
       event: 'error',
       payload: { message: err.message },
     })
+    emitter.emit('close')
+    sessions.delete(sessionId)
   })
 
   const session: TerminalSession = {

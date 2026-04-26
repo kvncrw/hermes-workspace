@@ -1,5 +1,9 @@
 FROM node:22-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash python3 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g pnpm
 
 WORKDIR /app

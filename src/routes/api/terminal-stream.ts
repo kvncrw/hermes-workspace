@@ -97,6 +97,8 @@ export const Route = createFileRoute('/api/terminal-stream')({
                 send('data', evt.payload)
               } else if (evt.event === 'exit') {
                 send('exit', evt.payload)
+              } else if (evt.event === 'error') {
+                send('error', evt.payload)
               }
             }
 
