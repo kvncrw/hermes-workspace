@@ -1039,20 +1039,54 @@ export function Conductor() {
       })
     }
 
+    // No real workers yet — surface the orchestrator's actual state so the
+    // user can see what's happening. We pull live data from the orchestrator
+    // session: skill loads, tool calls, last reasoning excerpt. Replaces the
+    // static "Nova / Spawning workers…" placeholder which was indistinguishable
+    // from a wedged mission.
+    const activity = conductor.orchestratorActivity
+    const delegatedCount = activity?.workersDelegatedFromTools.length ?? 0
+    const lastTool = activity?.lastTool ?? null
+
+    let statusLine = conductor.goal || 'Preparing the office…'
+    let role = 'Orchestrator — preparing'
+
+    if (activity) {
+      role = `Orchestrator (${activity.msgCount} msgs)`
+      if (delegatedCount > 0) {
+        role = `Orchestrator — ${delegatedCount} worker${delegatedCount === 1 ? '' : 's'} dispatched, awaiting results`
+      } else if (lastTool === 'skill_view') {
+        role = 'Orchestrator — loading skills'
+      } else if (lastTool === 'todo') {
+        role = 'Orchestrator — building plan'
+      } else if (lastTool === 'terminal' || lastTool === 'search_files') {
+        role = 'Orchestrator — exploring environment'
+      } else if (lastTool) {
+        role = `Orchestrator — last tool: ${lastTool}`
+      }
+
+      if (activity.lastReasoning) {
+        statusLine = activity.lastReasoning
+      } else if (lastTool) {
+        statusLine = `Just called ${lastTool}`
+      }
+    }
+
     return [
       {
-        id: 'conductor-placeholder-agent',
-        name: 'Nova',
-        modelId: conductor.conductorSettings.workerModel || 'auto',
-        roleDescription: 'Waiting for workers',
+        id: 'conductor-orchestrator',
+        name: 'Orchestrator',
+        modelId: conductor.conductorSettings.orchestratorModel || conductor.conductorSettings.workerModel || 'auto',
+        roleDescription: role,
         status: 'spawning',
-        lastLine: conductor.goal || 'Preparing the office…',
-        taskCount: 0,
-        currentTask: conductor.goal || 'Preparing the office…',
-        sessionKey: 'conductor-placeholder-agent',
+        lastLine: statusLine,
+        lastAt: activity?.lastUpdatedAt ? new Date(activity.lastUpdatedAt).getTime() : undefined,
+        taskCount: delegatedCount,
+        currentTask: role,
+        sessionKey: conductor.orchestratorSessionKey ?? 'conductor-orchestrator',
       },
     ]
-  }, [conductor.conductorSettings.workerModel, conductor.goal, conductor.isPaused, conductor.tasks, conductor.workerOutputs, conductor.workers])
+  }, [conductor.conductorSettings.orchestratorModel, conductor.conductorSettings.workerModel, conductor.goal, conductor.isPaused, conductor.tasks, conductor.workerOutputs, conductor.workers, conductor.orchestratorActivity, conductor.orchestratorSessionKey])
 
   const completePhaseProjectPath = useMemo(() => {
     const workerOutputTexts = [
@@ -2358,8 +2392,8 @@ export function Conductor() {
             <section className="rounded-2xl border border-[var(--theme-warning-border)] bg-[var(--theme-warning-soft)] px-5 py-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-[var(--theme-warning)]">⏳ Mission appears stalled — no activity for 60 seconds</p>
-                  <p className="mt-1 text-xs text-[var(--theme-muted)]">Sometimes the workers are still alive, but the stream went quiet. Your call.</p>
+                  <p className="text-sm font-semibold text-[var(--theme-warning)]">⏳ Mission appears stalled — no orchestrator or worker activity for 5 minutes</p>
+                  <p className="mt-1 text-xs text-[var(--theme-muted)]">The orchestrator session and all workers have gone quiet. They may still recover, but it's unusual. Your call.</p>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
@@ -2454,10 +2488,38 @@ export function Conductor() {
                         )
                       })}
                       {displayWorkers.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] px-4 py-8 text-center text-sm text-[var(--theme-muted)] md:col-span-2">
-                          <div className="flex items-center justify-center gap-3">
-                            <div className="size-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                            <span>Spawning workers…</span>
+                        <div className="rounded-2xl border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] px-4 py-6 text-sm text-[var(--theme-muted)] md:col-span-2">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-1 size-4 shrink-0 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+                            <div className="min-w-0 flex-1 space-y-1 text-left">
+                              {(() => {
+                                const a = conductor.orchestratorActivity
+                                if (!a) {
+                                  return <div className="text-[var(--theme-text)]">Waiting for cron tick to fire orchestrator…</div>
+                                }
+                                const dispatched = a.workersDelegatedFromTools.length
+                                const head =
+                                  dispatched > 0
+                                    ? `Orchestrator dispatched ${dispatched} worker${dispatched === 1 ? '' : 's'}, awaiting results…`
+                                    : a.lastTool === 'skill_view'
+                                      ? `Orchestrator loading skills (${a.msgCount} msgs)…`
+                                      : a.lastTool === 'todo'
+                                        ? `Orchestrator planning task list (${a.msgCount} msgs)…`
+                                        : a.lastTool === 'terminal' || a.lastTool === 'search_files'
+                                          ? `Orchestrator exploring environment (${a.msgCount} msgs)…`
+                                          : a.lastTool
+                                            ? `Orchestrator: last tool ${a.lastTool} (${a.msgCount} msgs)`
+                                            : `Orchestrator alive (${a.msgCount} msgs)`
+                                return (
+                                  <>
+                                    <div className="text-[var(--theme-text)]">{head}</div>
+                                    {a.lastReasoning ? (
+                                      <div className="line-clamp-2 text-xs italic text-[var(--theme-muted)]">{a.lastReasoning}</div>
+                                    ) : null}
+                                  </>
+                                )
+                              })()}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -2481,10 +2543,38 @@ export function Conductor() {
                   )
                 })}
                 {conductor.workers.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] px-4 py-8 text-center text-sm text-[var(--theme-muted)] md:col-span-2">
-                    <div className="flex items-center justify-center gap-3">
-                      <div className="size-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                      <span>Spawning workers…</span>
+                  <div className="rounded-2xl border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] px-4 py-6 text-sm text-[var(--theme-muted)] md:col-span-2">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-1 size-4 shrink-0 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+                      <div className="min-w-0 flex-1 space-y-1 text-left">
+                        {(() => {
+                          const a = conductor.orchestratorActivity
+                          if (!a) {
+                            return <div className="text-[var(--theme-text)]">Waiting for cron tick to fire orchestrator…</div>
+                          }
+                          const dispatched = a.workersDelegatedFromTools.length
+                          const head =
+                            dispatched > 0
+                              ? `Orchestrator dispatched ${dispatched} worker${dispatched === 1 ? '' : 's'}, awaiting results…`
+                              : a.lastTool === 'skill_view'
+                                ? `Orchestrator loading skills (${a.msgCount} msgs)…`
+                                : a.lastTool === 'todo'
+                                  ? `Orchestrator planning task list (${a.msgCount} msgs)…`
+                                  : a.lastTool === 'terminal' || a.lastTool === 'search_files'
+                                    ? `Orchestrator exploring environment (${a.msgCount} msgs)…`
+                                    : a.lastTool
+                                      ? `Orchestrator: last tool ${a.lastTool} (${a.msgCount} msgs)`
+                                      : `Orchestrator alive (${a.msgCount} msgs)`
+                          return (
+                            <>
+                              <div className="text-[var(--theme-text)]">{head}</div>
+                              {a.lastReasoning ? (
+                                <div className="line-clamp-2 text-xs italic text-[var(--theme-muted)]">{a.lastReasoning}</div>
+                              ) : null}
+                            </>
+                          )
+                        })()}
+                      </div>
                     </div>
                   </div>
                 )}
