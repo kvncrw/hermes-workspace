@@ -7,16 +7,37 @@ import { fetchSessions } from '@/lib/gateway-api'
 type HistoryMessagePart = {
   type?: string
   text?: string
+  name?: string
+  input?: unknown
+  content?: unknown
+}
+
+type HistoryToolCall = {
+  function?: { name?: string; arguments?: string }
+  name?: string
+  arguments?: string
 }
 
 type HistoryMessage = {
   role?: string
   content?: string | HistoryMessagePart[]
+  reasoning?: string
+  tool_calls?: HistoryToolCall[]
+  updated_at?: string
 }
 
 type HistoryResponse = {
   messages?: HistoryMessage[]
   error?: string
+  updatedAt?: string
+}
+
+export type OrchestratorActivity = {
+  msgCount: number
+  lastTool: string | null
+  lastReasoning: string | null
+  lastUpdatedAt: string | null
+  workersDelegatedFromTools: string[]
 }
 
 type ConductorMissionRecord = {
@@ -881,6 +902,62 @@ async function streamPortableConductorMission(params: {
   return { runId, sessionKey, text: accumulated }
 }
 
+async function fetchOrchestratorActivity(sessionKey: string): Promise<OrchestratorActivity> {
+  const response = await fetch(`/api/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=200`)
+  const payload = (await response.json().catch(() => ({}))) as HistoryResponse
+  if (!response.ok) {
+    throw new Error(payload.error || `Failed to load orchestrator history for ${sessionKey}`)
+  }
+  const messages = payload.messages ?? []
+  let lastTool: string | null = null
+  let lastReasoning: string | null = null
+  const delegated: string[] = []
+  for (const msg of messages) {
+    if (msg.role !== 'assistant') continue
+    if (typeof msg.reasoning === 'string' && msg.reasoning.trim()) {
+      lastReasoning = msg.reasoning.trim().slice(0, 280)
+    }
+    if (Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls) {
+        const name = tc.function?.name ?? tc.name
+        if (name) lastTool = name
+        if (name === 'delegate_task' || name === 'create_task' || name === 'sessions_spawn') {
+          const argsRaw = tc.function?.arguments ?? tc.arguments
+          if (typeof argsRaw === 'string') {
+            try {
+              const parsed = JSON.parse(argsRaw)
+              const label = parsed.label ?? parsed.name ?? parsed.task_id
+              if (label) delegated.push(String(label))
+            } catch {
+              // ignore parse failures
+            }
+          }
+        }
+      }
+    }
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === 'tool_use' && part.name) {
+          lastTool = part.name
+          if (part.name === 'delegate_task' || part.name === 'create_task' || part.name === 'sessions_spawn') {
+            const inp = part.input as { label?: string; name?: string; task_id?: string } | undefined
+            const label = inp?.label ?? inp?.name ?? inp?.task_id
+            if (label) delegated.push(String(label))
+          }
+        }
+      }
+    }
+  }
+  return {
+    msgCount: messages.length,
+    lastTool,
+    lastReasoning,
+    lastUpdatedAt: payload.updatedAt ?? null,
+    workersDelegatedFromTools: Array.from(new Set(delegated)),
+  }
+}
+
+
 export function useConductorGateway() {
   const [initialMission] = useState<PersistedMission | null>(() => loadPersistedMission())
   const [missionId, setMissionId] = useState<string | null>(() => initialMission?.missionId ?? null)
@@ -1051,6 +1128,28 @@ export function useConductorGateway() {
     }
   }, [missionStatusQuery.data, phase])
 
+  // Live orchestrator session state — what skills it loaded, what tool it called
+  // most recently, what it's reasoning about. Surfaced in the UI so users can
+  // see "orchestrator is loading skill X" instead of a static "Spawning workers…"
+  // placeholder. Polls on the same interval as sessions while the mission is
+  // active and stops once we see real workers attached.
+  const orchestratorActivityQuery = useQuery({
+    queryKey: ['conductor', 'orchestrator-activity', orchestratorSessionKey],
+    queryFn: async () => {
+      if (!orchestratorSessionKey) return null
+      try {
+        return await fetchOrchestratorActivity(orchestratorSessionKey)
+      } catch {
+        return null
+      }
+    },
+    enabled:
+      !!orchestratorSessionKey &&
+      (phase === 'decomposing' || phase === 'running'),
+    refetchInterval: phase === 'decomposing' || phase === 'running' ? 4_000 : false,
+  })
+  const orchestratorActivity = orchestratorActivityQuery.data ?? null
+
   const getMissionElapsedMs = (referenceTime = Date.now()) => {
     if (!missionStartedAt) return 0
     const startedMs = new Date(missionStartedAt).getTime()
@@ -1127,11 +1226,27 @@ export function useConductorGateway() {
     setTimeoutWarning(false)
   }, [phase, streamText, planText, streamEvents.length])
 
+  // Treat orchestrator session msg-count growth as activity. The orchestrator
+  // session file freezes during sessions_yield (waiting on workers), so we
+  // also reset the stale timer when worker history refreshes (the polling
+  // effect at the worker output site already updates lastWorkerSnapshotRef).
+  useEffect(() => {
+    if (phase !== 'running' && phase !== 'decomposing') return
+    if (!orchestratorActivity) return
+    lastActivityAtRef.current = Date.now()
+    setTimeoutWarning(false)
+  }, [phase, orchestratorActivity?.msgCount, orchestratorActivity?.lastTool])
+
   useEffect(() => {
     if (phase !== 'running' && phase !== 'decomposing') return
 
+    // 60s was too aggressive — orchestrator skill loading + first decomposition
+    // routinely takes 90-180s, and once it yields to wait on workers the file
+    // stops updating until a worker reports back. Bumped to 5min so the banner
+    // only fires when the mission is actually wedged.
+    const STALE_THRESHOLD_MS = 5 * 60_000
     const timer = window.setInterval(() => {
-      if (Date.now() - lastActivityAtRef.current >= 60_000) {
+      if (Date.now() - lastActivityAtRef.current >= STALE_THRESHOLD_MS) {
         setTimeoutWarning(true)
       }
     }, 1_000)
@@ -1683,6 +1798,7 @@ export function useConductorGateway() {
     tasks,
     workers,
     activeWorkers,
+    orchestratorActivity,
     missionHistory,
     hasPersistedMission,
     selectedHistoryEntry,
