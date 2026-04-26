@@ -8,6 +8,8 @@ import {
 import { getTerminalSession } from '../../server/terminal-sessions'
 import { requireLocalOrAuth } from '../../server/auth-middleware'
 
+const TERMINAL_INPUT_REQUESTS_PER_MINUTE = 1200
+
 export const Route = createFileRoute('/api/terminal-input')({
   server: {
     handlers: {
@@ -23,14 +25,6 @@ export const Route = createFileRoute('/api/terminal-input')({
         const csrfCheck = requireJsonContentType(request)
         if (csrfCheck) return csrfCheck
 
-        const ip = getClientIp(request)
-        // Interactive terminals can easily emit dozens to hundreds of key/input
-        // events per minute. Keep a rate limit for abuse protection, but make it
-        // high enough that normal typing, paste, and tmux control sequences work.
-        if (!rateLimit(`terminal:${ip}`, 6000, 60_000)) {
-          return rateLimitResponse()
-        }
-
         const body = (await request.json().catch(() => ({}))) as Record<
           string,
           unknown
@@ -38,6 +32,17 @@ export const Route = createFileRoute('/api/terminal-input')({
         const sessionId =
           typeof body.sessionId === 'string' ? body.sessionId : ''
         const data = typeof body.data === 'string' ? body.data : ''
+        const ip = getClientIp(request)
+        if (
+          !rateLimit(
+            `terminal:${ip}:${sessionId}`,
+            TERMINAL_INPUT_REQUESTS_PER_MINUTE,
+            60_000,
+          )
+        ) {
+          return rateLimitResponse()
+        }
+
         const session = getTerminalSession(sessionId)
         if (!session) {
           return new Response(JSON.stringify({ ok: false }), {

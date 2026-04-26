@@ -449,12 +449,16 @@ export function TerminalWorkspace({
           }
 
           if (eventName === 'error' && eventData) {
-            terminal.writeln('\r\n[terminal] connection error\r\n')
+            const payload = JSON.parse(eventData) as { message?: string }
+            terminal.writeln(
+              `\r\n[terminal] ${payload.message ?? 'connection error'}\r\n`,
+            )
           }
         }
       }
 
       // Flush any remaining buffered writes
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- set asynchronously by queueWrite while streaming
       if (flushTimer) clearTimeout(flushTimer)
       flushWrites()
 
