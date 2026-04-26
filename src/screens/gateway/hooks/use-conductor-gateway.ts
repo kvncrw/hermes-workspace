@@ -661,37 +661,55 @@ async function fetchOrchestratorActivity(sessionKey: string): Promise<Orchestrat
   let lastTool: string | null = null
   let lastReasoning: string | null = null
   const delegated: string[] = []
+  const isDispatchTool = (name: string | null | undefined) =>
+    name === 'delegate_task' || name === 'create_task' || name === 'sessions_spawn'
+  const recordDelegated = (rawArgs: unknown) => {
+    const parsed: Record<string, unknown> | null =
+      typeof rawArgs === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(rawArgs) as Record<string, unknown>
+            } catch {
+              return null
+            }
+          })()
+        : rawArgs && typeof rawArgs === 'object'
+          ? (rawArgs as Record<string, unknown>)
+          : null
+    if (!parsed) return
+    const label =
+      (typeof parsed.label === 'string' && parsed.label) ||
+      (typeof parsed.name === 'string' && parsed.name) ||
+      (typeof parsed.task_id === 'string' && parsed.task_id) ||
+      null
+    if (label) delegated.push(String(label))
+  }
   for (const msg of messages) {
     if (msg.role !== 'assistant') continue
     if (typeof msg.reasoning === 'string' && msg.reasoning.trim()) {
       lastReasoning = msg.reasoning.trim().slice(0, 280)
     }
+    // Direct OpenAI-style tool_calls (rare on /api/history but handle it).
     if (Array.isArray(msg.tool_calls)) {
       for (const tc of msg.tool_calls) {
         const name = tc.function?.name ?? tc.name
         if (name) lastTool = name
-        if (name === 'delegate_task' || name === 'create_task' || name === 'sessions_spawn') {
-          const argsRaw = tc.function?.arguments ?? tc.arguments
-          if (typeof argsRaw === 'string') {
-            try {
-              const parsed = JSON.parse(argsRaw)
-              const label = parsed.label ?? parsed.name ?? parsed.task_id
-              if (label) delegated.push(String(label))
-            } catch {
-              // ignore parse failures
-            }
-          }
-        }
+        if (isDispatchTool(name)) recordDelegated(tc.function?.arguments ?? tc.arguments)
       }
     }
+    // Hermes /api/history converts tool_calls -> content blocks with
+    // type: 'toolCall' (camelCase) carrying name + arguments. That's what
+    // we actually see at runtime — not the OpenAI 'tool_use' form.
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part.type === 'tool_use' && part.name) {
-          lastTool = part.name
-          if (part.name === 'delegate_task' || part.name === 'create_task' || part.name === 'sessions_spawn') {
-            const inp = part.input as { label?: string; name?: string; task_id?: string } | undefined
-            const label = inp?.label ?? inp?.name ?? inp?.task_id
-            if (label) delegated.push(String(label))
+        const partType = part.type
+        const partName = part.name
+        if (!partName) continue
+        if (partType === 'toolCall' || partType === 'tool_use') {
+          lastTool = partName
+          if (isDispatchTool(partName)) {
+            const partAny = part as { input?: unknown; arguments?: unknown; partialJson?: unknown }
+            recordDelegated(partAny.input ?? partAny.arguments ?? partAny.partialJson)
           }
         }
       }
