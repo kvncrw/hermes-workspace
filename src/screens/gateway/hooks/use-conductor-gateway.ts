@@ -267,20 +267,30 @@ function loadPersistedMission(): PersistedMission | null {
     ) {
       return null
     }
-    // Never restore running/decomposing — if the browser closed mid-mission, it's dead.
-    // Only restore 'complete' (reviewable) or 'idle'.
-    const isStale = phase === 'running' || phase === 'decomposing'
+    // Conductor missions run server-side in Hermes (cron-backed orchestrator
+    // + sessions_yield workers); the browser is a polling viewer, not the
+    // owner of the mission process. So a remount (page switch, refresh,
+    // app suspend/resume) must NOT discard a running/decomposing mission —
+    // the orchestrator session is still alive on the server and we have its
+    // session key in workerKeys[0]. Drop running/decomposing only if it's
+    // older than 6 hours (well past any reasonable mission length) — at
+    // that point it's almost certainly stale state we can safely retire.
+    const SIX_HOURS_MS = 6 * 60 * 60_000
+    const startedMs = missionStartedAt ? new Date(missionStartedAt).getTime() : NaN
+    const ageMs = Number.isFinite(startedMs) ? Date.now() - startedMs : 0
+    const isStaleByAge =
+      (phase === 'running' || phase === 'decomposing') && ageMs > SIX_HOURS_MS
 
     return {
-      goal: isStale ? '' : goal,
-      phase: isStale ? 'idle' : phase,
-      missionStartedAt: isStale ? null : missionStartedAt,
-      isPaused: isStale ? false : isPaused,
-      pausedElapsedMs: isStale ? 0 : pausedElapsedMs,
-      accumulatedPausedMs: isStale ? 0 : accumulatedPausedMs,
-      pauseStartedAt: isStale ? null : pauseStartedAt,
-      workerKeys: isStale ? [] : workerKeys,
-      workerLabels: isStale ? [] : workerLabels,
+      goal: isStaleByAge ? '' : goal,
+      phase: isStaleByAge ? 'idle' : phase,
+      missionStartedAt: isStaleByAge ? null : missionStartedAt,
+      isPaused: isStaleByAge ? false : isPaused,
+      pausedElapsedMs: isStaleByAge ? 0 : pausedElapsedMs,
+      accumulatedPausedMs: isStaleByAge ? 0 : accumulatedPausedMs,
+      pauseStartedAt: isStaleByAge ? null : pauseStartedAt,
+      workerKeys: isStaleByAge ? [] : workerKeys,
+      workerLabels: isStaleByAge ? [] : workerLabels,
       workerOutputs,
       streamText,
       planText,
