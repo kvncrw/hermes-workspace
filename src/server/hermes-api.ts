@@ -55,6 +55,7 @@ export type HermesMessage = {
   tool_call_id?: string | null
   tool_calls?: Array<unknown> | string | null
   tool_name?: string | null
+  reasoning?: string | null
   timestamp: number
   token_count?: number | null
   finish_reason?: string | null
@@ -282,6 +283,7 @@ export function toChatMessage(
       ? new Date(msg.timestamp * 1000).toISOString()
       : undefined,
     sessionKey: msg.session_id,
+    ...(msg.reasoning ? { reasoning: msg.reasoning } : {}),
     ...(typeof options?.historyIndex === 'number'
       ? { __historyIndex: options.historyIndex }
       : {}),
