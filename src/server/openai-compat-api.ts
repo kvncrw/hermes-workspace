@@ -124,6 +124,22 @@ function parseClaudeToolProgressChunk(payload: string): StreamChunkType | null {
   }
 }
 
+function findSseFrameBoundary(buffer: string): {
+  index: number
+  length: number
+} | null {
+  const lfIndex = buffer.indexOf('\n\n')
+  const crlfIndex = buffer.indexOf('\r\n\r\n')
+
+  if (lfIndex < 0 && crlfIndex < 0) return null
+  if (lfIndex < 0) return { index: crlfIndex, length: 4 }
+  if (crlfIndex < 0) return { index: lfIndex, length: 2 }
+
+  return lfIndex < crlfIndex
+    ? { index: lfIndex, length: 2 }
+    : { index: crlfIndex, length: 4 }
+}
+
 export async function* parseOpenAIStream(
   response: Response,
 ): AsyncGenerator<StreamChunkType, void, void> {
@@ -141,10 +157,10 @@ export async function* parseOpenAIStream(
 
     buffer += decoder.decode(value, { stream: true })
 
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const rawEvent = buffer.slice(0, boundary)
-      buffer = buffer.slice(boundary + 2)
+    let boundary = findSseFrameBoundary(buffer)
+    while (boundary) {
+      const rawEvent = buffer.slice(0, boundary.index)
+      buffer = buffer.slice(boundary.index + boundary.length)
 
       let eventName = ''
       const dataLines: string[] = []
@@ -191,7 +207,7 @@ export async function* parseOpenAIStream(
         }
       }
 
-      boundary = buffer.indexOf('\n\n')
+      boundary = findSseFrameBoundary(buffer)
     }
   }
 }

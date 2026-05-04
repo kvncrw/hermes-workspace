@@ -40,6 +40,25 @@ describe('parseOpenAIStream', () => {
     ])
   })
 
+  it('parses CRLF-framed chunks emitted by vLLM', async () => {
+    const response = createStreamResponse([
+      'data: {"choices":[{"delta":{"role":"assistant","content":""}}]}\r\n\r\n',
+      'data: {"choices":[{"delta":{"content":"Ok"}}]}\r\n\r\n',
+      'data: {"choices":[{"delta":{"content":"!"}}]}\r\n\r\n',
+      'data: [DONE]\r\n\r\n',
+    ])
+
+    const chunks = []
+    for await (const chunk of parseOpenAIStream(response)) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks).toEqual([
+      { type: 'content', text: 'Ok' },
+      { type: 'content', text: '!' },
+    ])
+  })
+
   it('emits synthetic tool events for Hermes tool progress frames', async () => {
     const response = createStreamResponse([
       'event: claude.tool.progress\n',
