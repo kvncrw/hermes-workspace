@@ -145,6 +145,40 @@ function normalizeMessageValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function isToolContentPart(part: unknown): boolean {
+  if (!part || typeof part !== 'object') return false
+  const type = (part as { type?: unknown }).type
+  return type === 'toolCall' || type === 'tool_use' || type === 'toolUse'
+}
+
+function hasStreamToolCalls(message: ChatMessage): boolean {
+  const raw = message as Record<string, unknown>
+  return (
+    (Array.isArray(raw.__streamToolCalls) &&
+      raw.__streamToolCalls.length > 0) ||
+    (Array.isArray(raw.streamToolCalls) && raw.streamToolCalls.length > 0)
+  )
+}
+
+export function stripToolDetailsForDisplay(
+  message: ChatMessage,
+  showToolMessages: boolean,
+): ChatMessage {
+  if (showToolMessages || message.role !== 'assistant') return message
+
+  const content = Array.isArray(message.content) ? message.content : []
+  const hasToolContent = content.some(isToolContentPart)
+  if (!hasToolContent && !hasStreamToolCalls(message)) return message
+
+  const next: ChatMessage = {
+    ...message,
+    content: content.filter((part) => !isToolContentPart(part)),
+  }
+  delete (next as Record<string, unknown>).__streamToolCalls
+  delete (next as Record<string, unknown>).streamToolCalls
+  return next
+}
+
 function getMessageClientId(message: ChatMessage): string {
   const raw = message as Record<string, unknown>
   return (
@@ -444,7 +478,8 @@ export function useChatHistory({
         // they quote these phrases somewhere inside the text.
         if (text.startsWith('Pre-compaction memory flush')) return false
         if (text.startsWith('Store durable memories now')) return false
-        if (text.startsWith('Summarize this naturally for the user')) return false
+        if (text.startsWith('Summarize this naturally for the user'))
+          return false
         if (text.startsWith('APPEND new content only and do not overwrite'))
           return false
         if (
@@ -521,7 +556,9 @@ export function useChatHistory({
       }
     }
 
-    return filtered
+    return filtered.map((message) =>
+      stripToolDetailsForDisplay(message, showToolMessages),
+    )
   }, [historyMessages, showToolMessages])
 
   const messageCount = useMemo(() => {
