@@ -122,6 +122,7 @@ import { Route as ApiClaudeProxySplatRouteImport } from './routes/api/claude-pro
 import { Route as ApiClaudeJobsJobIdRouteImport } from './routes/api/claude-jobs.$jobId'
 import { Route as ApiArtifactsArtifactIdRouteImport } from './routes/api/artifacts.$artifactId'
 import { Route as ApiSessionsSessionKeyStatusRouteImport } from './routes/api/sessions/$sessionKey.status'
+import { Route as ApiSessionsSessionKeyMessagesRouteImport } from './routes/api/sessions/$sessionKey.messages'
 import { Route as ApiSessionsSessionKeyActiveRunRouteImport } from './routes/api/sessions/$sessionKey.active-run'
 
 const TerminalRoute = TerminalRouteImport.update({
@@ -691,6 +692,12 @@ const ApiSessionsSessionKeyStatusRoute =
     path: '/$sessionKey/status',
     getParentRoute: () => ApiSessionsRoute,
   } as any)
+const ApiSessionsSessionKeyMessagesRoute =
+  ApiSessionsSessionKeyMessagesRouteImport.update({
+    id: '/$sessionKey/messages',
+    path: '/$sessionKey/messages',
+    getParentRoute: () => ApiSessionsRoute,
+  } as any)
 const ApiSessionsSessionKeyActiveRunRoute =
   ApiSessionsSessionKeyActiveRunRouteImport.update({
     id: '/$sessionKey/active-run',
@@ -812,6 +819,7 @@ export interface FileRoutesByFullPath {
   '/api/skills/uninstall': typeof ApiSkillsUninstallRoute
   '/api/swarm-memory/search': typeof ApiSwarmMemorySearchRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
+  '/api/sessions/$sessionKey/messages': typeof ApiSessionsSessionKeyMessagesRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
 }
 export interface FileRoutesByTo {
@@ -927,6 +935,7 @@ export interface FileRoutesByTo {
   '/api/skills/uninstall': typeof ApiSkillsUninstallRoute
   '/api/swarm-memory/search': typeof ApiSwarmMemorySearchRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
+  '/api/sessions/$sessionKey/messages': typeof ApiSessionsSessionKeyMessagesRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
 }
 export interface FileRoutesById {
@@ -1044,6 +1053,7 @@ export interface FileRoutesById {
   '/api/skills/uninstall': typeof ApiSkillsUninstallRoute
   '/api/swarm-memory/search': typeof ApiSwarmMemorySearchRoute
   '/api/sessions/$sessionKey/active-run': typeof ApiSessionsSessionKeyActiveRunRoute
+  '/api/sessions/$sessionKey/messages': typeof ApiSessionsSessionKeyMessagesRoute
   '/api/sessions/$sessionKey/status': typeof ApiSessionsSessionKeyStatusRoute
 }
 export interface FileRouteTypes {
@@ -1162,6 +1172,7 @@ export interface FileRouteTypes {
     | '/api/skills/uninstall'
     | '/api/swarm-memory/search'
     | '/api/sessions/$sessionKey/active-run'
+    | '/api/sessions/$sessionKey/messages'
     | '/api/sessions/$sessionKey/status'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -1277,6 +1288,7 @@ export interface FileRouteTypes {
     | '/api/skills/uninstall'
     | '/api/swarm-memory/search'
     | '/api/sessions/$sessionKey/active-run'
+    | '/api/sessions/$sessionKey/messages'
     | '/api/sessions/$sessionKey/status'
   id:
     | '__root__'
@@ -1393,6 +1405,7 @@ export interface FileRouteTypes {
     | '/api/skills/uninstall'
     | '/api/swarm-memory/search'
     | '/api/sessions/$sessionKey/active-run'
+    | '/api/sessions/$sessionKey/messages'
     | '/api/sessions/$sessionKey/status'
   fileRoutesById: FileRoutesById
 }
@@ -2288,6 +2301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSessionsSessionKeyStatusRouteImport
       parentRoute: typeof ApiSessionsRoute
     }
+    '/api/sessions/$sessionKey/messages': {
+      id: '/api/sessions/$sessionKey/messages'
+      path: '/$sessionKey/messages'
+      fullPath: '/api/sessions/$sessionKey/messages'
+      preLoaderRoute: typeof ApiSessionsSessionKeyMessagesRouteImport
+      parentRoute: typeof ApiSessionsRoute
+    }
     '/api/sessions/$sessionKey/active-run': {
       id: '/api/sessions/$sessionKey/active-run'
       path: '/$sessionKey/active-run'
@@ -2371,12 +2391,14 @@ const ApiMemoryRouteWithChildren = ApiMemoryRoute._addFileChildren(
 interface ApiSessionsRouteChildren {
   ApiSessionsSendRoute: typeof ApiSessionsSendRoute
   ApiSessionsSessionKeyActiveRunRoute: typeof ApiSessionsSessionKeyActiveRunRoute
+  ApiSessionsSessionKeyMessagesRoute: typeof ApiSessionsSessionKeyMessagesRoute
   ApiSessionsSessionKeyStatusRoute: typeof ApiSessionsSessionKeyStatusRoute
 }
 
 const ApiSessionsRouteChildren: ApiSessionsRouteChildren = {
   ApiSessionsSendRoute: ApiSessionsSendRoute,
   ApiSessionsSessionKeyActiveRunRoute: ApiSessionsSessionKeyActiveRunRoute,
+  ApiSessionsSessionKeyMessagesRoute: ApiSessionsSessionKeyMessagesRoute,
   ApiSessionsSessionKeyStatusRoute: ApiSessionsSessionKeyStatusRoute,
 }
 
