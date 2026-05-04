@@ -179,7 +179,10 @@ export async function* parseOpenAIStream(
       for (const payload of dataLines) {
         if (!payload || payload === '[DONE]') continue
 
-        if (eventName === 'claude.tool.progress') {
+        if (
+          eventName === 'hermes.tool.progress' ||
+          eventName === 'claude.tool.progress'
+        ) {
           const toolChunk = parseClaudeToolProgressChunk(payload)
           if (toolChunk) yield toolChunk
           continue

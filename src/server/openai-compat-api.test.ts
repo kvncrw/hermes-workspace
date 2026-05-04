@@ -61,7 +61,7 @@ describe('parseOpenAIStream', () => {
 
   it('emits synthetic tool events for Hermes tool progress frames', async () => {
     const response = createStreamResponse([
-      'event: claude.tool.progress\n',
+      'event: hermes.tool.progress\n',
       'data: {"tool":"terminal","emoji":"💻","label":"ls -la"}\n\n',
       'data: [DONE]\n\n',
     ])
@@ -80,11 +80,32 @@ describe('parseOpenAIStream', () => {
     ])
   })
 
+  it('keeps compatibility with legacy claude tool progress frames', async () => {
+    const response = createStreamResponse([
+      'event: claude.tool.progress\n',
+      'data: {"tool":"terminal","emoji":"💻","label":"pwd"}\n\n',
+      'data: [DONE]\n\n',
+    ])
+
+    const chunks = []
+    for await (const chunk of parseOpenAIStream(response)) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks).toEqual([
+      {
+        type: 'tool',
+        name: 'terminal',
+        label: '💻 pwd',
+      },
+    ])
+  })
+
   it('handles multiple tool events even when frames are split across transport chunks', async () => {
     const response = createStreamResponse([
-      'event: claude.tool.progress\ndata: {"tool":"browser_get_images","emoji":"📖","la',
+      'event: hermes.tool.progress\ndata: {"tool":"browser_get_images","emoji":"📖","la',
       'bel":"scan page"}\n\n',
-      'event: claude.tool.progress\ndata: {"tool":"browser_console","emoji":"🔎","label":"inspect DOM"}\n\n',
+      'event: hermes.tool.progress\ndata: {"tool":"browser_console","emoji":"🔎","label":"inspect DOM"}\n\n',
       'data: {"choices":[{"delta":{"content":"done"}}]}\n\n',
       'data: [DONE]\n\n',
     ])

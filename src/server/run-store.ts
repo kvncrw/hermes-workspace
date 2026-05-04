@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { getHermesRoot } from './claude-paths'
@@ -35,6 +35,7 @@ export type PersistedRunState = {
 }
 
 const RUNS_ROOT = path.join(getHermesRoot(), 'webui-mvp', 'runs')
+const runLocks = new Map<string, Promise<void>>()
 
 function encodeSessionKey(sessionKey: string): string {
   return encodeURIComponent(sessionKey || 'main')
@@ -48,6 +49,35 @@ function runPath(sessionKey: string, runId: string): string {
   return path.join(sessionDir(sessionKey), `${runId}.json`)
 }
 
+function lockKey(sessionKey: string, runId: string): string {
+  return `${encodeSessionKey(sessionKey)}/${runId}`
+}
+
+async function withRunLock<T>(
+  sessionKey: string,
+  runId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const key = lockKey(sessionKey, runId)
+  const previous = runLocks.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const current = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const chained = previous.catch(() => undefined).then(() => current)
+  runLocks.set(key, chained)
+
+  await previous.catch(() => undefined)
+  try {
+    return await task()
+  } finally {
+    release()
+    if (runLocks.get(key) === chained) {
+      runLocks.delete(key)
+    }
+  }
+}
+
 async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true })
 }
@@ -55,11 +85,12 @@ async function ensureDir(dir: string): Promise<void> {
 async function writeRun(run: PersistedRunState): Promise<void> {
   const dir = sessionDir(run.sessionKey)
   await ensureDir(dir)
-  await writeFile(
-    runPath(run.sessionKey, run.runId),
-    `${JSON.stringify(run, null, 2)}\n`,
-    'utf8',
-  )
+  const finalPath = runPath(run.sessionKey, run.runId)
+  const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.${Math.random()
+    .toString(16)
+    .slice(2)}.tmp`
+  await writeFile(tmpPath, `${JSON.stringify(run, null, 2)}\n`, 'utf8')
+  await rename(tmpPath, finalPath)
 }
 
 export async function createPersistedRun(input: {
@@ -81,8 +112,10 @@ export async function createPersistedRun(input: {
     toolCalls: [],
     lifecycleEvents: [],
   }
-  await writeRun(run)
-  return run
+  return withRunLock(input.sessionKey, input.runId, async () => {
+    await writeRun(run)
+    return run
+  })
 }
 
 export async function getPersistedRun(
@@ -102,12 +135,14 @@ export async function updatePersistedRun(
   runId: string,
   updater: (run: PersistedRunState) => PersistedRunState,
 ): Promise<PersistedRunState | null> {
-  const current = await getPersistedRun(sessionKey, runId)
-  if (!current) return null
-  const next = updater(current)
-  next.updatedAt = Date.now()
-  await writeRun(next)
-  return next
+  return withRunLock(sessionKey, runId, async () => {
+    const current = await getPersistedRun(sessionKey, runId)
+    if (!current) return null
+    const next = updater(current)
+    next.updatedAt = Date.now()
+    await writeRun(next)
+    return next
+  })
 }
 
 export async function appendRunText(
