@@ -30,13 +30,27 @@ export type LocalProviderDef = {
   apiMode: string
 }
 
+// Default upstream URLs for local providers. Most users run Hermes alongside
+// Ollama on the same host, so loopback is the right default. Operators
+// running Hermes in a container/k8s pod where Ollama lives elsewhere can
+// override per-provider via env vars without forking this list.
+//
+//   HERMES_OLLAMA_URL=http://ollama.svc:11434/v1
+//   HERMES_ATOMIC_CHAT_URL=http://atomic.svc:1337/v1
+//
+// The probe URL is derived from baseUrl (strip trailing /v1, append /v1/models)
+// so probe and proxy stay in lockstep with whatever the operator configures.
+const env = (typeof process !== 'undefined' && process.env) || {}
+const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434/v1'
+const DEFAULT_ATOMIC_CHAT_URL = 'http://127.0.0.1:1337/v1'
+
 const LOCAL_PROVIDERS: LocalProviderDef[] = [
   {
     id: 'ollama',
     name: 'Ollama',
     port: 11434,
     modelsPath: '/v1/models',
-    baseUrl: 'http://127.0.0.1:11434/v1',
+    baseUrl: env.HERMES_OLLAMA_URL || DEFAULT_OLLAMA_URL,
     apiKey: 'ollama',
     apiMode: 'chat_completions',
   },
@@ -45,7 +59,7 @@ const LOCAL_PROVIDERS: LocalProviderDef[] = [
     name: 'Atomic Chat',
     port: 1337,
     modelsPath: '/v1/models',
-    baseUrl: 'http://127.0.0.1:1337/v1',
+    baseUrl: env.HERMES_ATOMIC_CHAT_URL || DEFAULT_ATOMIC_CHAT_URL,
     apiKey: 'atomic-chat',
     apiMode: 'chat_completions',
   },
@@ -93,7 +107,11 @@ function cleanModelName(id: string): string {
 async function probeProvider(
   def: LocalProviderDef,
 ): Promise<DiscoveredProvider> {
-  const url = `http://127.0.0.1:${def.port}${def.modelsPath}`
+  // Derive the probe URL from baseUrl so a HERMES_*_URL override is honored
+  // for both probing and proxying. baseUrl ends in /v1; append /models for
+  // the OpenAI-shaped models listing endpoint.
+  const probeBase = def.baseUrl.replace(/\/+$/, '')
+  const url = `${probeBase}/models`
   try {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),

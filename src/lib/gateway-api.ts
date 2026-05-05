@@ -309,12 +309,16 @@ export async function setDefaultModel(
   const timeout = globalThis.setTimeout(() => controller.abort(), 12000)
 
   try {
-    const response = await fetch(makeEndpoint('/api/config-patch'), {
-      method: 'POST',
+    // Use the surviving PATCH /api/claude-config route. The legacy
+    // /api/config-patch was removed in the standalone-Hermes cleanup
+    // (#f8bb4910). The server deep-merges body.config; nest the model
+    // setting under the current schema (model.default) instead of the
+    // legacy flat `defaultModel` key.
+    const response = await fetch(makeEndpoint('/api/claude-config'), {
+      method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        raw: JSON.stringify({ defaultModel: model }, null, 2),
-        reason: 'Studio: set default model',
+        config: { model: { default: model } },
       }),
       signal: controller.signal,
     })

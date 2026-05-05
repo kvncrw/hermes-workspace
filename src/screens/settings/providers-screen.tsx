@@ -1446,10 +1446,19 @@ export function ProvidersScreen({ embedded = false }: ProvidersScreenProps) {
 
   const saveMutation = useMutation({
     mutationFn: async ({ path, value }: SaveSettingPayload) => {
-      const response = await fetch('/api/config-patch', {
-        method: 'POST',
+      // Translate dotted-path settings update into the nested {config:{...}}
+      // shape that PATCH /api/claude-config deep-merges. The old
+      // /api/config-patch route was removed in the standalone-Hermes cleanup
+      // (#f8bb4910); /api/claude-config is the surviving handler.
+      const segments = String(path).split('.').filter(Boolean)
+      let nested: unknown = value
+      for (let i = segments.length - 1; i >= 0; i--) {
+        nested = { [segments[i]]: nested }
+      }
+      const response = await fetch('/api/claude-config', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, value }),
+        body: JSON.stringify({ config: nested }),
       })
       const payload = (await response
         .json()

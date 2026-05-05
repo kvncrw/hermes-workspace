@@ -253,14 +253,15 @@ export function ProviderWizard({
 
     const providerName = selectedProvider.name
     const providerId = selectedProvider.id
-    const patchBody = JSON.stringify({
-      raw: JSON.stringify(patch, null, 2),
-      reason: `Studio: add ${providerName} API key`,
-    })
+    // PATCH /api/claude-config deep-merges body.config into the on-disk
+    // config and writes env vars from body.env. The previous /api/config-patch
+    // route accepted {raw, reason}; that route was removed in the standalone-
+    // Hermes cleanup (#f8bb4910). Pass the patch object directly as body.config.
+    const patchBody = JSON.stringify({ config: patch })
 
     async function saveConfigAndRestart() {
-      const res = await fetch('/api/config-patch', {
-        method: 'POST',
+      const res = await fetch('/api/claude-config', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: patchBody,
       })
